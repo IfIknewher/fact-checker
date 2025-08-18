@@ -1,0 +1,92 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>AI-Assisted Fact-Check</title><script src="https://cdn.tailwindcss.com"></script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/><style>body{font-family:Inter,system-ui,Arial,sans-serif;background:#FDFBF8;color:#403d39}.status-icon{font-size:1.5rem}.status-verified{color:#28a745}.status-scrutiny{color:#ffc107}.status-unverified{color:#dc3545}.insight-button{background:#eb5e28;color:#fff;padding:.5rem 1rem;border-radius:.5rem;font-weight:500}.insight-button:hover{background:#c94d1f}</style></head><body class="antialiased p-4"><div class="container mx-auto max-w-4xl bg-white rounded-xl shadow-lg border my-12 p-8 md:p-12"><header class="text-center mb-10"><h1 class="text-4xl font-bold mb-4 text-[#252422]">AI-Assisted Fact-Check & Source Verification</h1><p class="text-lg text-gray-600">Paste text to analyze claims, statuses, and sources.</p></header><section class="mb-10"><h2 class="text-2xl font-semibold mb-4">Enter Text</h2><label class="block mb-2 text-sm text-gray-600">Model</label><select id="modelSelect" class="mb-4 border rounded p-2"><option value="gemini" selected>Gemini</option><option value="openai">OpenAI</option><option value="claude">Claude</option></select><textarea id="textInput" class="w-full p-4 border rounded-lg text-lg mb-6 h-40" placeholder="e.g., 'The capital of Australia is Sydney...'"></textarea><button id="verifyButton" class="w-full bg-[#eb5e28] text-white px-8 py-4 rounded-lg font-bold text-xl hover:bg-[#c94d1f] transition shadow-lg flex items-center justify-center"><span id="buttonText">Verify Claims</span><svg id="loadingSpinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></button></section><section id="resultsSection" class="mt-12 hidden"><h2 class="text-2xl font-semibold mb-6">Verification Report</h2><div class="bg-gray-50 p-6 rounded-lg mb-8 shadow-inner"><h3 class="text-xl font-bold mb-3">Overall Assessment</h3><p id="summaryText" class="text-gray-700">Analyzing claims...</p></div><div id="claimsContainer" class="space-y-6"></div><div id="errorMessage" class="text-red-600 text-center mt-8 hidden"></div></section></div><footer class="text-center text-gray-500 text-sm mt-12 mb-4">&copy; 2025</footer><script>
+document.addEventListener('DOMContentLoaded',function(){
+  const textInput=document.getElementById('textInput');
+  const verifyButton=document.getElementById('verifyButton');
+  const loadingSpinner=document.getElementById('loadingSpinner');
+  const buttonText=document.getElementById('buttonText');
+  const resultsSection=document.getElementById('resultsSection');
+  const summaryText=document.getElementById('summaryText');
+  const claimsContainer=document.getElementById('claimsContainer');
+  const errorMessage=document.getElementById('errorMessage');
+  const modelSelect=document.getElementById('modelSelect');
+
+  const ROUTES={gemini:'/api/gemini-proxy',openai:'/api/openai-proxy',claude:'/api/claude-proxy'};
+
+  async function callLLM(model,prompt,wantJSON=false,schema=null){
+    const endpoint=ROUTES[model];
+    if(model==='gemini'){
+      const payload={contents:[{role:"user",parts:[{text:prompt}]}]};
+      if(wantJSON&&schema) payload.generationConfig={responseMimeType:"application/json",responseSchema:schema};
+      const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!r.ok) throw new Error(await r.text());
+      const j=await r.json();
+      const text=j?.candidates?.[0]?.content?.parts?.[0]?.text??'';
+      return wantJSON?JSON.parse(text||'[]'):text;
+    }
+    if(model==='openai'){
+      const payload={model:"gpt-4o-mini",messages:[{role:"user",content:prompt}]};
+      const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!r.ok) throw new Error(await r.text());
+      const j=await r.json();
+      const text=j?.choices?.[0]?.message?.content??'';
+      return wantJSON?JSON.parse(text||'[]'):text;
+    }
+    if(model==='claude'){
+      const payload={model:"claude-3-5-haiku-latest",max_tokens:1200,messages:[{role:"user",content:prompt}]};
+      const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!r.ok) throw new Error(await r.text());
+      const j=await r.json();
+      const text=j?.content?.[0]?.text??'';
+      return wantJSON?JSON.parse(text||'[]'):text;
+    }
+    throw new Error('Unknown model');
+  }
+
+  async function verifyReport(inputText,model){
+    const prompt='Analyze the text and extract verifiable factual claims. For each claim, assign a status (Verified ✅, Needs Scrutiny ⚠️, or Unverified/Fabricated ❌) and include 1–2 source URLs with brief snippets. Output strict JSON array: ' +
+    '[{\"claim\":\"...\",\"status\":\"...\",\"sources\":[{\"url\":\"...\",\"snippet\":\"...\"}]}]\\n' +
+    'Text: \"\"\"' + inputText + '\"\"\"';
+    const schema={type:"ARRAY",items:{type:"OBJECT",properties:{claim:{type:"STRING"},status:{type:"STRING"},sources:{type:"ARRAY",items:{type:"OBJECT",properties:{url:{type:"STRING"},snippet:{type:"STRING"}}}}}}};
+    return await callLLM(model,prompt,true,schema);
+  }
+  async function overall(vc,sc,uc,txt,model){
+    const prompt='Based on: ' + vc + ' Verified, ' + sc + ' Needs Scrutiny, ' + uc + ' Unverified/Fabricated — give a concise (1–2 sentences) overall reliability assessment. If any unverified, add a brief misinformation warning.';
+    return await callLLM(model,prompt,false,null);
+  }
+  async function insight(claim,status,model){
+    const prompt='Claim: \"' + claim + '\" | Status: \"' + status + '\". Provide a 1–2 sentence insight. If unverified, suggest why it might be misleading; if verified, add one related fact.';
+    return await callLLM(model,prompt,false,null);
+  }
+
+  verifyButton.addEventListener('click',async()=>{
+    const input=textInput.value.trim();
+    const model=(modelSelect?.value||'gemini');
+    if(!input){errorMessage.textContent='Enter text to verify.';errorMessage.classList.remove('hidden');resultsSection.classList.add('hidden');return;}
+    errorMessage.classList.add('hidden');claimsContainer.innerHTML='';summaryText.textContent='Analyzing claims...';resultsSection.classList.remove('hidden');
+    loadingSpinner.classList.remove('hidden');buttonText.textContent='Verifying...';verifyButton.disabled=true;
+    try{
+      const claims=await verifyReport(input,model);
+      if(!Array.isArray(claims)||claims.length===0){summaryText.textContent='No verifiable claims found.';return;}
+      let v=0,s=0,u=0;
+      claims.forEach(c=>{
+        let cls='',icon='';
+        if(c.status?.includes('Verified')){cls='status-verified';icon='✅';v++}
+        else if(c.status?.includes('Needs Scrutiny')){cls='status-scrutiny';icon='⚠️';s++}
+        else {cls='status-unverified';icon='❌';u++}
+        const el=document.createElement('div');el.className='bg-white p-6 rounded-lg shadow-sm border';
+        el.innerHTML='<div class="flex items-start mb-4"><span class="status-icon '+cls+' mr-3">'+icon+'</span><h3 class="text-lg font-bold text-gray-800 flex-1">'+(c.claim||'')+'</h3></div>' +
+        '<div class="flex justify-between items-center mb-2"><div class="sources-toggle cursor-pointer text-[#eb5e28] hover:underline">Show Sources</div><button class="get-insight-btn insight-button">✨ Get Insight</button></div>' +
+        '<div class="sources-content hidden bg-gray-50 p-4 rounded-lg border mb-2"><h4 class="font-semibold text-gray-700 mb-2">Status: '+(c.status||'')+'</h4>' +
+        '<ul class="list-disc pl-5 space-y-2 text-gray-600">'+((c.sources||[]).map(s=>'<li><a href="'+(s.url||'#')+'" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline break-words">'+(s.url||'')+'</a><p class="text-sm mt-1">\"'+(s.snippet||'')+'\"</p></li>').join(''))+'</ul></div>' +
+        '<div class="insight-content hidden bg-gray-50 p-4 rounded-lg border text-gray-700"><span class="text-gray-500">Generating insight...</span></div>';
+        claimsContainer.appendChild(el);
+        el.querySelector('.sources-toggle').addEventListener('click',function(){const box=this.closest('.bg-white').querySelector('.sources-content');box.classList.toggle('hidden');this.textContent=box.classList.contains('hidden')?'Show Sources':'Hide Sources';});
+        el.querySelector('.get-insight-btn').addEventListener('click',async function(){const box=this.closest('.bg-white').querySelector('.insight-content');box.classList.remove('hidden');box.innerHTML='<span class="text-gray-500">Generating insight...</span>';try{const i=await insight(c.claim||'',c.status||'',model);box.innerHTML='<p>'+i+'</p>';}catch(e){box.innerHTML='<p class="text-red-500">Insight failed.</p>';}})
+      });
+      const o=await overall(v,s,u,input,model);
+      summaryText.innerHTML='<p class="mb-2">Total Claims: <strong>'+claims.length+'</strong></p><p class="text-green-600">Verified: <strong>'+v+'</strong></p><p class="text-yellow-600">Needs Scrutiny: <strong>'+s+'</strong></p><p class="text-red-600">Unverified/Fabricated: <strong>'+u+'</strong></p><p class="mt-4 text-gray-700 font-medium"><strong>Overall:</strong> '+o+'</p>';
+    }catch(e){errorMessage.textContent='Verification failed. Check API key or routes.';errorMessage.classList.remove('hidden');summaryText.textContent='Analysis failed.';}
+    finally{loadingSpinner.classList.add('hidden');buttonText.textContent='Verify Claims';verifyButton.disabled=false;}
+  });
+});
+</script></body></html>
