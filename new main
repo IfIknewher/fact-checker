@@ -1,0 +1,59 @@
+# OPERATING MAP — v1
+
+## SCOPE
+GitHub repo + Vercel project for the fact-checker app.
+
+## WHERE IT BROKE (PATTERNS)
+- Spatial ambiguity: “root”, “settings”, live app vs dashboard.
+- Missing landmarks/links to exact screens.
+- Granularity mismatch: multi-step walls vs 1–3 click blocks.
+- Jargon assumptions: rename vs create, branch/commit, env targets.
+- Misdiagnosis loop: model failures were routing, not keys.
+- State drift: duplicates at root, nested `api/api`.
+
+## FREQUENCY SIGNALS
+- Env-var target confusion: 2×  
+- Live app vs dashboard: 2×  
+- `/api` placement errors: 3×+  
+- “Root/Code tab” concept: multiple times
+
+## PREDICTABILITY RULE
+If a step lacks any one of {visible landmark, **DO** link, **VERIFY** beacon}, loop risk is high. Provide all three.
+
+## MITIGATIONS ADOPTED
+- Do/Verify Blocks with screen landmarks.  
+- Deep links for create/edit/delete and Vercel settings.  
+- Beacons: `/api/*` → “POST only”; Deployment → “Ready”.  
+- ZIPs and key-rotation hygiene.
+
+## CONTROLS TO KEEP
+- One block at a time. Reply only: **DONE** or **ERROR** + one screenshot.  
+- Always include: Goal, Do link, Verify link, Beacon text.  
+- Use **edit-move** (rename to `api/<name>.js`), not duplicate-create.  
+- Before UI tests: require (1) final tree snapshot, (2) route beacons responding.  
+- On error: capture first Runtime Logs line and map to fix.
+
+## BLOCK TEMPLATE
+**Goal:** one sentence (e.g., “Move `openai-proxy.js` into `/api`”).  
+**Do:**  
+1) Click **DO LINK**.  
+2) Perform the single on-screen action → Commit directly to `main`.  
+**Verify:**  
+- Click **VERIFY LINK**; expect the beacon (path shows `api/…` or page reads “POST only”).  
+**Outcome:** reply **DONE** or **ERROR** (+ screenshot).
+
+## STANDARD BEACONS
+- **GitHub:** file path shows `api/<name>.js` after commit.  
+- **Vercel:** Deployment status = **Ready**.  
+- **API routes:** `GET /api/gemini-proxy` → **“POST only”** (405).
+
+## CANONICAL LINKS
+- Repo: https://github.com/lflknewher/fact-checker  
+- New file at path: `https://github.com/lflknewher/fact-checker/new/main?filename=api%2F<file>.js`  
+- Edit file: `https://github.com/lflknewher/fact-checker/edit/main/api/<file>.js`  
+- Vercel env vars: https://vercel.com/justin-d-barnetts-projects/fact-checker/settings/environment-variables  
+- Vercel deployments: https://vercel.com/justin-d-barnetts-projects/fact-checker/deployments  
+- Live app: https://fact-checker-ten.vercel.app
+
+---
+_Last updated: {{today}}_
